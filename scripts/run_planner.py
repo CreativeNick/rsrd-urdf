@@ -29,8 +29,7 @@ import tyro
 from loguru import logger
 
 from nerfstudio.utils.eval_utils import eval_setup
-from jaxmp.extras import load_urdf
-from jaxmp.coll import Convex
+from jaxmp.extras.urdf_loader import load_urdf
 
 from rsrd.extras.cam_helpers import get_ns_camera_at_origin
 from rsrd.robot.motion_plan_yumi import YUMI_REST_POSE
@@ -42,6 +41,7 @@ from rsrd.motion.motion_optimizer import (
 from rsrd.motion.atap_loss import ATAPConfig
 from rsrd.extras.viser_rsrd import ViserRSRD
 from rsrd.robot.planner import PartMotionPlanner
+from rsrd.robot.trajectory_saver import create_trajectory_saver
 import rsrd.transforms as tf
 from autolab_core import RigidTransform
 
@@ -125,9 +125,42 @@ def main(
     move_obj_handler = server.gui.add_checkbox("Move object", free_object, disabled=(not free_object))
     generate_traj_handler = server.gui.add_button("Generate trajectory", disabled=free_object)
     traj_list_handler = server.gui.add_slider("trajectory", 0, 1, 1, 0, disabled=True)
+    
+    # Add trajectory saving functionality
+    with server.gui.add_folder("💾 Trajectory Management"):
+        save_traj_button = server.gui.add_button("Save trajectories", disabled=True)
+        load_traj_button = server.gui.add_button("Load trajectories", disabled=False)
+        save_status = server.gui.add_text("Status", initial_value="No trajectories to save")
+    
     track_slider = server.gui.add_slider("timestep", 0, timesteps - 1, 1, 0)
     play_checkbox = server.gui.add_checkbox("play", True)
     traj_gen_lock = Lock()
+    
+    # Create trajectory saver
+    trajectory_saver = create_trajectory_saver(track_dir)
+    
+    # Check if saved trajectories exist and update load button status
+    def check_existing_trajectories():
+        try:
+            existing_data = trajectory_saver.load_trajectories()
+            if existing_data and 'all_trajectories' in existing_data and existing_data['all_trajectories'] is not None:
+                n_traj = existing_data['info']['n_trajectories']
+                save_status.value = f"Found {n_traj} saved trajectories - click Load to restore"
+                return True
+        except:
+            pass
+        save_status.value = "No saved trajectories found"
+        return False
+    
+    has_existing_trajectories = check_existing_trajectories()
+    
+    # Check if there are existing trajectories to load
+    traj_summary = trajectory_saver.get_trajectory_summary()
+    if traj_summary.get('has_data', False):
+        save_status.value = f"Found {traj_summary['n_trajectories']} saved trajectories from {traj_summary.get('timestamp', 'previous session')[:10]}"
+    else:
+        save_status.value = "No saved trajectories found"
+        load_traj_button.disabled = True
 
     list_traj = jnp.array(YUMI_REST_POSE).reshape(1, 1, -1).repeat(timesteps, axis=1)
 
@@ -142,6 +175,8 @@ def main(
 
         traj_list_handler.value = 0
         traj_list_handler.disabled = True
+        save_traj_button.disabled = True
+        save_status.value = "No trajectories to save"
         if list_traj is not None:
             list_traj = jnp.array(YUMI_REST_POSE).reshape(1, 1, -1).repeat(timesteps, axis=1)
 
@@ -166,6 +201,76 @@ def main(
         traj_list_handler.value = 0
         traj_list_handler.disabled = False
         move_obj_handler.disabled = False
+        
+        # Enable trajectory saving
+        save_traj_button.disabled = False
+        save_status.value = f"Ready to save {list_traj.shape[0]} trajectories"
+
+    @save_traj_button.on_click
+    def _(_):
+        nonlocal list_traj
+        if list_traj is not None and list_traj.shape[0] > 0:
+            save_status.value = "Saving trajectories..."
+            
+            # Gather metadata
+            metadata = {
+                "hand_mode": hand_mode,
+                "object_position": obj_frame_handle.position.tolist(),
+                "object_orientation": obj_frame_handle.wxyz.tolist(),
+                "selected_trajectory_idx": traj_list_handler.value,
+                "total_timesteps": timesteps,
+            }
+            
+            # Save trajectories using the separate saver module
+            success = trajectory_saver.save_trajectories(
+                trajectories=list_traj,
+                kin_tree=planner.kin,
+                metadata=metadata
+            )
+            
+            if success:
+                save_status.value = f"✅ Saved {list_traj.shape[0]} trajectories!"
+            else:
+                save_status.value = "❌ Failed to save trajectories"
+        else:
+            save_status.value = "❌ No trajectories to save"
+
+    @load_traj_button.on_click
+    def _(_):
+        nonlocal list_traj
+        save_status.value = "Loading trajectories..."
+        
+        try:
+            # Load trajectories using the saver module
+            loaded_data = trajectory_saver.load_trajectories()
+            
+            if loaded_data and 'all_trajectories' in loaded_data and loaded_data['all_trajectories'] is not None:
+                loaded_traj = loaded_data['all_trajectories']
+                info = loaded_data['info']
+                
+                # Convert to jax array and set as current trajectories
+                list_traj = jnp.array(loaded_traj)
+                
+                # Update UI controls
+                traj_list_handler.max = list_traj.shape[0] - 1
+                traj_list_handler.value = info.get('selected_trajectory_idx', 0)
+                traj_list_handler.disabled = False
+                
+                # Enable saving (since we now have trajectories)
+                save_traj_button.disabled = False
+                
+                # Update status
+                save_status.value = f"✅ Loaded {list_traj.shape[0]} trajectories from {info.get('timestamp', 'previous session')}"
+                
+                logger.info(f"Loaded {list_traj.shape[0]} trajectories successfully")
+                
+            else:
+                save_status.value = "❌ No saved trajectories found"
+                logger.warning("No trajectories found in save directory")
+                
+        except Exception as e:
+            save_status.value = f"❌ Failed to load: {str(e)[:50]}..."
+            logger.error(f"Failed to load trajectories: {e}")
 
     while True:
         if play_checkbox.value:

@@ -211,7 +211,11 @@ class GraspablePart:
         )
 
         # Simplify the mesh.
-        _mesh = _mesh.simplify_quadric_decimation(100)  # This affects speed by a lot!
+        # Use a reduction ratio instead of target face count for compatibility
+        original_faces = len(_mesh.faces)
+        target_faces = min(100, original_faces)
+        reduction_ratio = max(0.01, target_faces / original_faces)  # At least 1% reduction, max 100 faces
+        _mesh = _mesh.simplify_quadric_decimation(reduction_ratio)  # This affects speed by a lot!
 
         # Correct normals are important for grasp sampling!
         try:

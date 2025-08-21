@@ -2,7 +2,13 @@
 zed.py
 """
 
-import pyzed.sl as sl
+try:
+    import pyzed.sl as sl
+    PYZED_AVAILABLE = True
+except ImportError:
+    sl = None
+    PYZED_AVAILABLE = False
+    
 from typing import Optional, Tuple, cast
 import torch
 import numpy as np
@@ -28,6 +34,9 @@ class Zed():
     """Transform from left camera to ZED camera base."""
 
     def __init__(self, recording_file = None, start_time = 0.0, flip: bool = False):
+        if not PYZED_AVAILABLE:
+            raise ImportError("ZED SDK (pyzed) is not available. Install the ZED SDK to use ZED camera functionality.")
+            
         init = sl.InitParameters()
         if recording_file is not None:
             init.set_from_svo_file(recording_file)
