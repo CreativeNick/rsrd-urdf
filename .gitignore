@@ -163,4 +163,4 @@ cython_debug/
 #Datasets / data
 /datasets
 /data/nerfstudio
-
+/garfield_urdf_output
