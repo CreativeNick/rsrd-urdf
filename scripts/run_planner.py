@@ -229,11 +229,11 @@ def main(
             )
             
             if success:
-                save_status.value = f"✅ Saved {list_traj.shape[0]} trajectories!"
+                save_status.value = f"Saved {list_traj.shape[0]} trajectories!"
             else:
-                save_status.value = "❌ Failed to save trajectories"
+                save_status.value = "Failed to save trajectories"
         else:
-            save_status.value = "❌ No trajectories to save"
+            save_status.value = "No trajectories to save"
 
     @load_traj_button.on_click
     def _(_):
@@ -260,16 +260,16 @@ def main(
                 save_traj_button.disabled = False
                 
                 # Update status
-                save_status.value = f"✅ Loaded {list_traj.shape[0]} trajectories from {info.get('timestamp', 'previous session')}"
+                save_status.value = f"Loaded {list_traj.shape[0]} trajectories from {info.get('timestamp', 'previous session')}"
                 
                 logger.info(f"Loaded {list_traj.shape[0]} trajectories successfully")
                 
             else:
-                save_status.value = "❌ No saved trajectories found"
+                save_status.value = "No saved trajectories found"
                 logger.warning("No trajectories found in save directory")
                 
         except Exception as e:
-            save_status.value = f"❌ Failed to load: {str(e)[:50]}..."
+            save_status.value = f"Failed to load: {str(e)[:50]}..."
             logger.error(f"Failed to load trajectories: {e}")
 
     while True:

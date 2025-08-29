@@ -59,13 +59,13 @@ class RSRDToURDFConverter:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to load tracking data: {e}")
+            logger.error(f"Failed to load tracking data: {e}")
             return False
     
     def analyze_motion_patterns(self) -> Dict:
         """Analyze motion patterns to infer joint types and relationships."""
         
-        logger.info("🔍 Analyzing motion patterns for joint inference...")
+        logger.info("Analyzing motion patterns for joint inference...")
         
         analysis = {
             'part_motion_types': {},
@@ -225,7 +225,7 @@ class RSRDToURDFConverter:
     def generate_urdf(self, mesh_files: Dict[str, Path], joint_candidates: List[Dict]) -> Path:
         """Generate URDF file with proper joint structure."""
         
-        logger.info("📄 Generating URDF...")
+        logger.info("Generating URDF...")
         
         # create URDF root
         robot = ET.Element("robot", name="garfield_object")

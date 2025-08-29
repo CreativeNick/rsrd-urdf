@@ -111,10 +111,10 @@ class TrajectorySaver:
                 df.index.name = 'timestep'
                 df.to_csv(csv_path)
             
-            logger.info(f"✅ Saved {n_traj} trajectories to {self.save_dir}")
-            logger.info(f"   📁 Files: raw_trajectories.npy, trajectory_info.json")
+            logger.info(f"Saved {n_traj} trajectories to {self.save_dir}")
+            logger.info(f"Files: raw_trajectories.npy, trajectory_info.json")
             if selected_traj is not None:
-                logger.info(f"   📄 Selected trajectory #{selected_idx}: selected_trajectory.npy, .csv")
+                logger.info(f"Selected trajectory #{selected_idx}: selected_trajectory.npy, .csv")
             
             return True
             
@@ -204,9 +204,9 @@ class TrajectorySaver:
             with open(json_path, 'w') as f:
                 json.dump(json_data, f, indent=2)
             
-            logger.info(f"✅ Saved {n_trajectories} trajectories to {self.save_dir}")
-            logger.info(f"   📁 Formats: .npy, .json, .csv ({n_trajectories} files)")
-            logger.info(f"   🤖 Joints: {n_joints_in_traj} actuated joints (of {len(kin_tree.joint_names)} total)")
+            logger.info(f"Saved {n_trajectories} trajectories to {self.save_dir}")
+            logger.info(f"Formats: .npy, .json, .csv ({n_trajectories} files)")
+            logger.info(f"Joints: {n_joints_in_traj} actuated joints (of {len(kin_tree.joint_names)} total)")
             
             return True
             

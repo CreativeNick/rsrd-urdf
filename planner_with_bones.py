@@ -130,7 +130,7 @@ class BoneVisualizer:
                     self.motion_data[frame][part_name] = pose
                     self.num_frames = max(self.num_frames, frame + 1)
         
-        logger.info(f"🦴 Loaded motion data: {self.num_frames} frames")
+        logger.info(f"Loaded motion data: {self.num_frames} frames")
     
     def create_bone_geometry(self, start_pos: onp.ndarray, end_pos: onp.ndarray) -> trimesh.Trimesh:
         """Create bone geometry between two points."""
@@ -171,64 +171,144 @@ class BoneVisualizer:
         
         return bone
     
-    def update_bones(self, frame: int, scale: float = 1.0):
-        """Update bone visualization for given frame."""
-        if frame not in self.motion_data or not self.show_bones:
-            # Clear bones if not showing
-            for joint_name in list(self.bone_handles.keys()):
-                try:
-                    self.server.scene.remove(f"/object/bones/{joint_name}")
-                except:
-                    pass
-            self.bone_handles.clear()
+    def create_bones_once(self):
+        """Create bone geometry once based on first frame."""
+        if not self.motion_data or not self.joints:
             return
+            
+        # Use first frame to create bones
+        first_frame = min(self.motion_data.keys())
+        first_frame_data = self.motion_data[first_frame]
         
-        # Get part positions for this frame
-        part_positions = {}
-        for part_name, pose in self.motion_data[frame].items():
-            position = onp.array(pose[:3]) * scale
-            part_positions[part_name] = position
+        logger.info(f"Creating bones based on frame {first_frame}")
+        logger.info(f"Available parts: {list(first_frame_data.keys())}")
         
-        # Update/create bones
         for joint_name, joint_info in self.joints.items():
             parent_link = joint_info['parent']
             child_link = joint_info['child']
             
+            # Map link names to part names - fix the naming mismatch
+            # URDF joints use part_0, part_1, etc. but motion data uses part_00, part_01, etc.
             parent_part = parent_link.replace('_link', '')
             child_part = child_link.replace('_link', '')
             
-            # Get positions
-            if parent_part in part_positions:
-                parent_pos = part_positions[parent_part]
-            else:
-                parent_pos = onp.array([0, 0, 0])
+            # Convert part_0 -> part_00, part_1 -> part_01, etc.
+            if parent_part.startswith('part_') and len(parent_part) == 6:  # part_X format
+                part_num = int(parent_part[-1])
+                parent_part = f"part_{part_num:02d}"
+            if child_part.startswith('part_') and len(child_part) == 6:  # part_X format  
+                part_num = int(child_part[-1])
+                child_part = f"part_{part_num:02d}"
+                
+            logger.info(f"Joint {joint_name}: {parent_part} -> {child_part}")
             
-            if child_part in part_positions:
-                child_pos = part_positions[child_part]
-            else:
+            # Check if both parts exist
+            if parent_part not in first_frame_data:
+                logger.warning(f"Parent part '{parent_part}' not found in motion data")
                 continue
-            
-            # Create bone
+            if child_part not in first_frame_data:
+                logger.warning(f"Child part '{child_part}' not found in motion data")
+                continue
+                
+            # Get positions from motion data
+            parent_pos = onp.array(first_frame_data[parent_part][:3])
+            child_pos = onp.array(first_frame_data[child_part][:3])
+                
+            # Create simple bone between positions
             bone_mesh = self.create_bone_geometry(parent_pos, child_pos)
-            bone_mesh.visual.vertex_colors = [255, 50, 50, 200]  # Bright red
             
-            # Remove old bone
+            # Generate random color for each bone or use grey
+            import random
+            colors = [
+                [128, 128, 128, 255],  # Grey
+                [100, 150, 200, 255],  # Blue
+                [150, 100, 200, 255],  # Purple  
+                [200, 150, 100, 255],  # Orange
+                [100, 200, 150, 255],  # Green
+                [200, 100, 150, 255],  # Pink
+            ]
+            bone_color = colors[hash(joint_name) % len(colors)]
+            bone_mesh.visual.vertex_colors = bone_color
+
+            # Place bone in the /object hierarchy to align with object but render over it
             bone_path = f"/object/bones/{joint_name}"
-            if joint_name in self.bone_handles:
-                try:
-                    self.server.scene.remove(bone_path)
-                except:
-                    pass
-            
-            # Add new bone
             bone_handle = self.server.scene.add_mesh_trimesh(
                 bone_path,
-                bone_mesh,
-                position=(0, 0, 0),
-                wxyz=(1, 0, 0, 0)
+                bone_mesh
             )
             self.bone_handles[joint_name] = bone_handle
-    
+            
+        logger.info(f"Created {len(self.bone_handles)} bones")
+
+    def update_bones(self, frame: int, scale: float = 1.0, T_obj_world=None):
+        """Update bone positions for given frame."""
+        if frame not in self.motion_data or not self.show_bones:
+            return
+
+        # Get part positions for this frame
+        part_positions = {}
+        for part_name, pose in self.motion_data[frame].items():
+            # Apply scaling and transform to world coordinates
+            position = onp.array(pose[:3]) * scale
+            part_positions[part_name] = position
+
+        # Update existing bones
+        for joint_name, joint_info in self.joints.items():
+            if joint_name not in self.bone_handles:
+                continue
+                
+            parent_link = joint_info['parent']
+            child_link = joint_info['child']
+            
+            # Map link names to part names - fix the naming mismatch
+            parent_part = parent_link.replace('_link', '')
+            child_part = child_link.replace('_link', '')
+            
+            # Convert part_0 -> part_00, part_1 -> part_01, etc.
+            if parent_part.startswith('part_') and len(parent_part) == 6:  # part_X format
+                part_num = int(parent_part[-1])
+                parent_part = f"part_{part_num:02d}"
+            if child_part.startswith('part_') and len(child_part) == 6:  # part_X format  
+                part_num = int(child_part[-1])
+                child_part = f"part_{part_num:02d}"
+            
+            # Get positions
+            if parent_part not in part_positions or child_part not in part_positions:
+                continue
+                
+            parent_pos = part_positions[parent_part]
+            child_pos = part_positions[child_part]
+            
+            # Create new bone geometry using the working method
+            bone_mesh = self.create_bone_geometry(parent_pos, child_pos)
+            
+            # Generate random color for each bone or use grey
+            import random
+            colors = [
+                [128, 128, 128, 255],  # Grey
+                [100, 150, 200, 255],  # Blue
+                [150, 100, 200, 255],  # Purple  
+                [200, 150, 100, 255],  # Orange
+                [100, 200, 150, 255],  # Green
+                [200, 100, 150, 255],  # Pink
+            ]
+            bone_color = colors[hash(joint_name) % len(colors)]
+            bone_mesh.visual.vertex_colors = bone_color
+            
+            # Place bone in the /object hierarchy to align with object but render over it
+            bone_path = f"/object/bones/{joint_name}"
+            try:
+                self.server.scene.remove(bone_path)
+            except:
+                pass
+                
+            # The bone mesh is already positioned correctly relative to the object
+            bone_handle = self.server.scene.add_mesh_trimesh(
+                bone_path,
+                bone_mesh
+            )
+            self.bone_handles[joint_name] = bone_handle
+
     def toggle_bones(self, show: bool):
         """Toggle bone visibility."""
         self.show_bones = show
@@ -240,9 +320,12 @@ class BoneVisualizer:
                 except:
                     pass
             self.bone_handles.clear()
-            logger.info("[X] Bones hidden")
+            logger.info("Bones hidden")
         else:
-            logger.info("[O] Bones enabled")
+            # Create bones if this is the first time
+            if not self.bone_handles:
+                self.create_bones_once()
+            logger.info("Bones enabled")
 
 
 def main(
@@ -337,7 +420,7 @@ def main(
         save_status = server.gui.add_text("Status", initial_value="No trajectories to save")
     
     # Add bone visualization controls
-    with server.gui.add_folder("🦴 Joint/Bone Visualization"):
+    with server.gui.add_folder("Joint/Bone Visualization"):
         show_bones_checkbox = server.gui.add_checkbox("Show Bones", False)
         bone_thickness_slider = server.gui.add_slider("Bone Thickness", 0.001, 0.02, 0.001, 0.005)
         
@@ -443,11 +526,11 @@ def main(
             )
             
             if success:
-                save_status.value = f"✅ Saved {list_traj.shape[0]} trajectories!"
+                save_status.value = f"Saved {list_traj.shape[0]} trajectories!"
             else:
-                save_status.value = "❌ Failed to save trajectories"
+                save_status.value = "Failed to save trajectories"
         else:
-            save_status.value = "❌ No trajectories to save"
+            save_status.value = "No trajectories to save"
 
     @load_traj_button.on_click
     def _(_):
@@ -474,16 +557,16 @@ def main(
                 save_traj_button.disabled = False
                 
                 # Update status
-                save_status.value = f"✅ Loaded {list_traj.shape[0]} trajectories from {info.get('timestamp', 'previous session')}"
+                save_status.value = f"Loaded {list_traj.shape[0]} trajectories from {info.get('timestamp', 'previous session')}"
                 
                 logger.info(f"Loaded {list_traj.shape[0]} trajectories successfully")
                 
             else:
-                save_status.value = "❌ No saved trajectories found"
+                save_status.value = "No saved trajectories found"
                 logger.warning("No trajectories found in save directory")
                 
         except Exception as e:
-            save_status.value = f"❌ Failed to load: {str(e)[:50]}..."
+            save_status.value = f"Failed to load: {str(e)[:50]}..."
             logger.error(f"Failed to load trajectories: {e}")
 
     # Bone visualization callbacks
