@@ -179,10 +179,10 @@ class RSRDToURDFConverter:
                 joint_axis = [0, 0, 1]
             
             joints.append({
-                'name': f'part_{base_part}_to_part_{part_idx}',
+                'name': f'part_{base_part:02d}_to_part_{part_idx:02d}',
                 'type': joint_type,
-                'parent': f'part_{base_part}',
-                'child': f'part_{part_idx}',
+                'parent': f'part_{base_part:02d}',
+                'child': f'part_{part_idx:02d}',
                 'axis': joint_axis,
                 'origin': [0, 0, 0], # may refine later
                 'rpy': [0, 0, 0]
